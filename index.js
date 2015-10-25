@@ -25,7 +25,9 @@ var matchCss = /\.css$/;
 // fs tasks when running the custom importer code.
 // This can be removed as soon as node-sass implements a fix for this.
 var threadPoolSize = process.env.UV_THREADPOOL_SIZE || 4;
-var asyncSassJobQueue = async.queue(sass.render, threadPoolSize - 1);
+var asyncSassJobQueue = async.queue(function (task, callback) {
+    task.fn.apply(task.ctx, task.args.concat(callback));
+}, threadPoolSize - 1);
 
 /**
  * The sass-loader makes node-sass available to webpack modules.
@@ -164,7 +166,7 @@ module.exports = function (content) {
             return;
         }
 
-        self.resolve(dirContext, importToResolve, function onWebpackResolve(err, resolvedFilename) {
+        asyncSassJobQueue.push({ fn: self.resolve, ctx: self, args: [dirContext, importToResolve] }, function onWebpackResolve(err, resolvedFilename) {
             if (err) {
                 resolve(dirContext, originalImport, importsToResolve, done);
                 return;
@@ -258,7 +260,7 @@ module.exports = function (content) {
         }
     }
 
-    asyncSassJobQueue.push(sassOptions, function onRender(err, result) {
+    asyncSassJobQueue.push({ fn: sass.render, ctx: sass, args: [sassOptions] }, function onRender(err, result) {
         if (err) {
             formatSassError(err);
             err.file && self.dependency(err.file);
